@@ -16,24 +16,18 @@ func main() {
 	start := time.Now()
 
 	// Определение флагов командной строки
-	// 	This declares an integer flag, -n, stored in the pointer nFlag, with type *int:
-	// var nFlag = flag.Int("n", 1234, "help message for flag n")
-	// "" - значение по умолчанию
-	srcPath := flag.String("src", "", "Путь файла со списком URL")
-	dstPath := flag.String("dst", "", "Путь для спаршенных файлов")
-	// Создание флагов
-	flag.Parse()
+	srcPath, dstPath := parseFlags()
 
-	// Проверяет, были ли заданы значения∏ флагов --src и --dst, если нет, то print и завершение программы
-	if *srcPath == "" || *dstPath == "" {
-		fmt.Println("Используйте: ./grabber --src=source.txt --dst=destination ")
+	// Проверяется, возвращает ли функция validateFlags ложное значение (false)
+	err := validateFlags(srcPath, dstPath)
+	if err != nil {
+		fmt.Println(err)
 		return
 	}
 
-	// Открытие файла с URL, путь на файл указывается при вводе команды ./crabber...
-	file, err := os.Open(*srcPath)
+	// Открытие файла с URL
+	file, err := openFile(*srcPath)
 	if err != nil {
-		// В данном случае %v будет заменен строковым представлением ошибки, хранящейся в переменной err
 		fmt.Printf("Ошибка при открытии файла: %s", err)
 		return
 	}
@@ -41,28 +35,18 @@ func main() {
 	// + гарантирует, что файл будет закрыт, если произойдет ошибка
 	defer file.Close()
 
-	// Создание директории назначения, если ее нет
-	// os.MkdirAll: Функция которая рекурсивно создает все указанные в пути директории
-	// *dstPath: Разыменование указателя на строку, которая содержит путь к директории назначения, указанный пользователем в флаге --dst
-	// os.ModePerm: Константа из пакета os, которая задает права доступа к создаваемым директориям. Все пользователи могут читать, писать и выполнять файлы
-	// MkdirAll(path string, perm os.FileMode) error
-	err = os.MkdirAll(*dstPath, os.ModePerm)
+	// Создание директории назначения
+	err = createDirectory(*dstPath)
 	if err != nil {
 		fmt.Printf("Ошибка создания директория: %s", err)
 		return
 	}
 
-	// Создает новый сканер для чтения файла
-	// Сканы используются для построчного чтения данных из файла
-	scanner := bufio.NewScanner(file)
-	// Продолжает выполняться, пока в файле есть строки для чтения
-	for scanner.Scan() {
-		// Копирование строки
-		url := scanner.Text()
-		err := treatmentURL(url, *dstPath)
-		if err != nil {
-			fmt.Printf("Ошибка при чтении URL %s: %v\n", url, err)
-		}
+	// Обработка URL
+	err = processURLs(file, *dstPath)
+	if err != nil {
+		fmt.Printf("Ошибка при обработке URL: %v", err)
+		return
 	}
 
 	// Вычисление продолжительности выполнения программы
@@ -70,8 +54,48 @@ func main() {
 	fmt.Printf("Программа выполнилась за %v\n", duration)
 }
 
-// Функция обработки URL
-// принимает URL и путь к директории назначения, возвращает ошибку
+// parseFlags - парсинг флагов командной строки.
+func parseFlags() (srcPath *string, dstPath *string) {
+	srcPath = flag.String("src", "", "Путь файла со списком URL")
+	dstPath = flag.String("dst", "", "Путь для спаршенных файлов")
+	flag.Parse()
+	return srcPath, dstPath
+}
+
+// validateFlags - проверка значений флагов
+func validateFlags(srcPath, dstPath *string) error {
+	if *srcPath == "" || *dstPath == "" {
+		return fmt.Errorf("Используйте: ./grabber --src=source.txt --dst=destination")
+	}
+	return nil
+}
+
+// openFile - открытие файла с URL
+func openFile(path string) (*os.File, error) {
+	return os.Open(path)
+}
+
+// createDirectory - создание директории назначения
+func createDirectory(path string) error {
+	// os.MkdirAll: Функция которая рекурсивно создает все указанные в пути директории
+	// *dstPath: Разыменование указателя на строку, которая содержит путь к директории назначения, указанный пользователем в флаге --dst
+	// MkdirAll(path string, perm os.FileMode) error
+	return os.MkdirAll(path, os.ModePerm)
+}
+
+// processURLs - обработка URL из файла
+func processURLs(file *os.File, dstPath string) error {
+	scanner := bufio.NewScanner(file)
+	for scanner.Scan() {
+		url := scanner.Text()
+		if err := treatmentURL(url, dstPath); err != nil {
+			fmt.Printf("Ошибка при чтении URL %s: %v\n", url, err)
+		}
+	}
+	return scanner.Err()
+}
+
+// treatmentURL - функция обработки URL
 func treatmentURL(url string, dstPath string) error {
 	fmt.Printf("Обработка URL: %s", url)
 
@@ -109,11 +133,9 @@ func treatmentURL(url string, dstPath string) error {
 
 	// Возвращает nil, если ошибок нет
 	return nil
-
 }
 
-// Принимает строку (URL) и заменяет все символы / на символ _
-// Трбуется для корректного отображения создаваемого файла в файловой системе
+// sanitizeFilename - принимает строку (URL) и заменяет все символы / на символ _
 func sanitizeFilename(url string) string {
 	return strings.ReplaceAll(url, "/", "_")
 }
