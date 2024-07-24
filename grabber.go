@@ -8,61 +8,92 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 )
 
 func main() {
-	// Сохраняем текущее время о начале программы
+	// Сохраняем текущее время начала программы для последующего вычисления времени выполнения
 	start := time.Now()
 
-	// Определение флагов командной строки
+	// Определяем флаги командной строки для входного и выходного путей
 	srcPath, dstPath := parseFlags()
 
-	// Проверяется, возвращает ли функция validateFlags ложное значение (false)
+	// Проверяем, что флаги src и dst были заданы корректно
 	err := validateFlags(srcPath, dstPath)
 	if err != nil {
 		fmt.Println(err)
 		return
 	}
 
-	// Открытие файла с URL
+	// Открываем файл, содержащий список URL
 	file, err := openFile(*srcPath)
 	if err != nil {
-		fmt.Printf("Ошибка при открытии файла: %s", err)
+		fmt.Printf("Ошибка при открытии файла: %s\n", err)
 		return
 	}
-	// Откладывает закрытие файла до конца функции main
-	// + гарантирует, что файл будет закрыт, если произойдет ошибка
+	// Гарантируем закрытие файла по завершении функции main
 	defer file.Close()
 
-	// Создание директории назначения
+	// Создаем директорию назначения для сохранения загруженных файлов
 	err = createDirectory(*dstPath)
 	if err != nil {
-		fmt.Printf("Ошибка создания директория: %s", err)
+		fmt.Printf("Ошибка создания директории: %s\n", err)
 		return
 	}
 
-	// Обработка URL
-	err = processURLs(file, *dstPath)
-	if err != nil {
-		fmt.Printf("Ошибка при обработке URL: %v", err)
-		return
+	// Создаем канал для передачи URL
+	urls := make(chan string)
+	// Создаем канал для передачи ошибок
+	errors := make(chan error)
+	// Создаем канал для сигнала завершения работы горутин
+	done := make(chan struct{})
+
+	var wg sync.WaitGroup
+
+	// Запускаем несколько горутин для параллельной обработки URL
+	for i := 0; i < 5; i++ {
+		wg.Add(1)
+		go worker(urls, *dstPath, errors, &wg)
 	}
 
-	// Вычисление продолжительности выполнения программы
+	// Запускаем горутину для чтения и вывода ошибок
+	// анонимная функция
+	go func() {
+		for err := range errors {
+			fmt.Printf("Ошибка: %v\n", err)
+		}
+	}()
+
+	// Запускаем горутину для чтения URL из файла и отправки их в канал
+	go func() {
+		err := processURLs(file, urls)
+		if err != nil {
+			fmt.Printf("Ошибка при обработке URL: %v\n", err)
+		}
+		// Закрываем канал URL после завершения чтения
+		close(urls)
+	}()
+
+	// Ждем завершения всех горутин
+	wg.Wait()
+	// Закрываем канал done, чтобы сигнализировать об окончании работы
+	close(done)
+
+	// Вычисляем и выводим продолжительность выполнения программы
 	duration := time.Since(start)
 	fmt.Printf("Программа выполнилась за %v\n", duration)
 }
 
-// parseFlags - парсинг флагов командной строки.
+// parseFlags - функция для создания флагов командной строки
 func parseFlags() (srcPath *string, dstPath *string) {
-	srcPath = flag.String("src", "", "Путь файла со списком URL")
-	dstPath = flag.String("dst", "", "Путь для спаршенных файлов")
+	srcPath = flag.String("src", "", "Путь к файлу со списком URL")
+	dstPath = flag.String("dst", "", "Путь к директории для сохранения загруженных файлов")
 	flag.Parse()
 	return srcPath, dstPath
 }
 
-// validateFlags - проверка значений флагов
+// validateFlags - функция для проверки значений флагов
 func validateFlags(srcPath, dstPath *string) error {
 	if *srcPath == "" || *dstPath == "" {
 		return fmt.Errorf("Используйте: ./grabber --src=source.txt --dst=destination")
@@ -70,72 +101,76 @@ func validateFlags(srcPath, dstPath *string) error {
 	return nil
 }
 
-// openFile - открытие файла с URL
+// openFile - функция для открытия файла с URL
 func openFile(path string) (*os.File, error) {
 	return os.Open(path)
 }
 
-// createDirectory - создание директории назначения
+// createDirectory - функция для создания директории назначения
 func createDirectory(path string) error {
-	// os.MkdirAll: Функция которая рекурсивно создает все указанные в пути директории
-	// *dstPath: Разыменование указателя на строку, которая содержит путь к директории назначения, указанный пользователем в флаге --dst
-	// MkdirAll(path string, perm os.FileMode) error
 	return os.MkdirAll(path, os.ModePerm)
 }
 
-// processURLs - обработка URL из файла
-func processURLs(file *os.File, dstPath string) error {
+// processURLs - функция для чтения URL из файла и отправки их в канал
+func processURLs(file *os.File, urls chan<- string) error {
 	scanner := bufio.NewScanner(file)
 	for scanner.Scan() {
 		url := scanner.Text()
-		if err := treatmentURL(url, dstPath); err != nil {
-			fmt.Printf("Ошибка при чтении URL %s: %v\n", url, err)
-		}
+		// Отправляем URL в канал
+		urls <- url
 	}
 	return scanner.Err()
 }
 
-// treatmentURL - функция обработки URL
-func treatmentURL(url string, dstPath string) error {
-	fmt.Printf("Обработка URL: %s", url)
+// worker - горутина для обработки URL
+func worker(urls <-chan string, dstPath string, errors chan<- error, wg *sync.WaitGroup) {
+	defer wg.Done()
+	for url := range urls {
+		if err := treatmentURL(url, dstPath); err != nil {
+			errors <- err
+		}
+	}
+}
 
-	// Выполняет HTTP GET запрос к указанному URL
+// treatmentURL - функция для обработки каждого URL
+func treatmentURL(url string, dstPath string) error {
+	fmt.Printf("Обработка URL: %s\n", url)
+
+	// Выполняем HTTP GET запрос к указанному URL
 	resp, err := http.Get(url)
 	if err != nil {
-		return fmt.Errorf("Ошибка при подключении к URL %s", err)
+		return fmt.Errorf("Ошибка при подключении к URL %s: %v", url, err)
 	}
-	// Откладывает закрытие тела ответа до конца функции. Это гарантирует, что ресурс будет освобожден
+	// Гарантируем закрытие тела ответа после завершения функции
 	defer resp.Body.Close()
 
-	// Проверяет статус ответа. Если он не равен 200 OK, возвращает ошибку
+	// Проверяем статус ответа. Если он не равен 200 OK, возвращаем ошибку
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("Non-OK HTTP статус: %s", resp.Status)
 	}
 
-	// Определяет имя файла для сохранения содержимого, используя путь к директории назначения и безопасное имя файла
+	// Определяем имя файла для сохранения содержимого, используя безопасное имя файла
 	filename := filepath.Join(dstPath, sanitizeFilename(url)+".html")
 
-	// Создает файл для записи содержимого
+	// Создаем файл для записи содержимого
 	outFile, err := os.Create(filename)
 	if err != nil {
-		return fmt.Errorf("Ошибка при создании файла для записи: %s", err)
+		return fmt.Errorf("Ошибка при создании файла для записи: %v", err)
 	}
-	// Откладывает закрытие файла до конца функции
+	// Гарантируем закрытие файла после завершения функции
 	defer outFile.Close()
 
-	// Считывает содержимое тела ответа и записывает его в открытый файл
+	// Считываем содержимое тела ответа и записываем его в открытый файл
 	_, err = outFile.ReadFrom(resp.Body)
 	if err != nil {
-		return fmt.Errorf("Ошибка при записи данных в файл: %s", err)
+		return fmt.Errorf("Ошибка при записи данных в файл: %v", err)
 	}
 
 	fmt.Printf("Сохранение %s в %s\n", url, filename)
-
-	// Возвращает nil, если ошибок нет
 	return nil
 }
 
-// sanitizeFilename - принимает строку (URL) и заменяет все символы / на символ _
+// sanitizeFilename - функция для замены всех символов / на _ в URL, чтобы создать безопасное имя файла
 func sanitizeFilename(url string) string {
 	return strings.ReplaceAll(url, "/", "_")
 }
