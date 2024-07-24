@@ -26,7 +26,7 @@ func main() {
 
 	// Проверяет, были ли заданы значения∏ флагов --src и --dst, если нет, то print и завершение программы
 	if *srcPath == "" || *dstPath == "" {
-		fmt.Println("Используйте: ./crabber --src=source.txt --dst=destination ")
+		fmt.Println("Используйте: ./grabber --src=source.txt --dst=destination ")
 		return
 	}
 
@@ -67,7 +67,7 @@ func main() {
 
 	// Вычисление продолжительности выполнения программы
 	duration := time.Since(start)
-	fmt.Printf("Программа выпонилась за %v\n", duration)
+	fmt.Printf("Программа выполнилась за %v\n", duration)
 }
 
 // Функция обработки URL
@@ -78,7 +78,7 @@ func treatmentURL(url string, dstPath string) error {
 	// Выполняет HTTP GET запрос к указанному URL
 	resp, err := http.Get(url)
 	if err != nil {
-		fmt.Errorf("Ошибка при подключении к URL %s", err)
+		return fmt.Errorf("Ошибка при подключении к URL %s", err)
 	}
 	// Откладывает закрытие тела ответа до конца функции. Это гарантирует, что ресурс будет освобожден
 	defer resp.Body.Close()
@@ -105,7 +105,7 @@ func treatmentURL(url string, dstPath string) error {
 		return fmt.Errorf("Ошибка при записи данных в файл: %s", err)
 	}
 
-	fmt.Printf("Saved %s to %s\n", url, filename)
+	fmt.Printf("Сохранение %s в %s\n", url, filename)
 
 	// Возвращает nil, если ошибок нет
 	return nil
