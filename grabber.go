@@ -18,13 +18,6 @@ func main() {
 	// Определение флагов командной строки
 	srcPath, dstPath := parseFlags()
 
-	// Проверяется, возвращает ли функция validateFlags ложное значение (false)
-	err := validateFlags(srcPath, dstPath)
-	if err != nil {
-		fmt.Println(err)
-		return
-	}
-
 	// Открытие файла с URL
 	file, err := os.Open(*srcPath)
 	if err != nil {
@@ -59,15 +52,12 @@ func parseFlags() (srcPath *string, dstPath *string) {
 	srcPath = flag.String("src", "", "Путь файла со списком URL")
 	dstPath = flag.String("dst", "", "Путь для спаршенных файлов")
 	flag.Parse()
-	return srcPath, dstPath
-}
 
-// validateFlags - проверка значений флагов
-func validateFlags(srcPath, dstPath *string) error {
 	if *srcPath == "" || *dstPath == "" {
 		flag.Usage()
 	}
-	return nil
+
+	return srcPath, dstPath
 }
 
 // processURLs - обработка URL из файла
