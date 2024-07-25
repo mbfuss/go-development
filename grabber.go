@@ -42,43 +42,32 @@ func main() {
 		return
 	}
 
-	// Создаем канал для передачи URL
-	urls := make(chan string)
-	// Создаем канал для передачи ошибок
-	errors := make(chan error)
-	// Создаем канал для сигнала завершения работы горутин
-	done := make(chan struct{})
-
 	var wg sync.WaitGroup
+	var mu sync.Mutex
+	errors := []error{}
 
-	// Запускаем несколько горутин для параллельной обработки URL
-	for i := 0; i < 5; i++ {
+	// Чтение URL из файла и запуск горутин для их обработки
+	scanner := bufio.NewScanner(file)
+	for scanner.Scan() {
+		url := scanner.Text()
 		wg.Add(1)
-		go worker(urls, *dstPath, errors, &wg)
+		go func(url string) {
+			defer wg.Done()
+			if err := treatmentURL(url, *dstPath); err != nil {
+				mu.Lock()
+				errors = append(errors, err)
+				mu.Unlock()
+			}
+		}(url)
 	}
-
-	// Запускаем горутину для чтения и вывода ошибок
-	// анонимная функция
-	go func() {
-		for err := range errors {
-			fmt.Printf("Ошибка: %v\n", err)
-		}
-	}()
-
-	// Запускаем горутину для чтения URL из файла и отправки их в канал
-	go func() {
-		err := processURLs(file, urls)
-		if err != nil {
-			fmt.Printf("Ошибка при обработке URL: %v\n", err)
-		}
-		// Закрываем канал URL после завершения чтения
-		close(urls)
-	}()
 
 	// Ждем завершения всех горутин
 	wg.Wait()
-	// Закрываем канал done, чтобы сигнализировать об окончании работы
-	close(done)
+
+	// Вывод ошибок, если они есть
+	for _, err := range errors {
+		fmt.Printf("Ошибка: %v\n", err)
+	}
 
 	// Вычисляем и выводим продолжительность выполнения программы
 	duration := time.Since(start)
@@ -109,27 +98,6 @@ func openFile(path string) (*os.File, error) {
 // createDirectory - функция для создания директории назначения
 func createDirectory(path string) error {
 	return os.MkdirAll(path, os.ModePerm)
-}
-
-// processURLs - функция для чтения URL из файла и отправки их в канал
-func processURLs(file *os.File, urls chan<- string) error {
-	scanner := bufio.NewScanner(file)
-	for scanner.Scan() {
-		url := scanner.Text()
-		// Отправляем URL в канал
-		urls <- url
-	}
-	return scanner.Err()
-}
-
-// worker - горутина для обработки URL
-func worker(urls <-chan string, dstPath string, errors chan<- error, wg *sync.WaitGroup) {
-	defer wg.Done()
-	for url := range urls {
-		if err := treatmentURL(url, dstPath); err != nil {
-			errors <- err
-		}
-	}
 }
 
 // treatmentURL - функция для обработки каждого URL
