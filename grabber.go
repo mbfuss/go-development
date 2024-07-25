@@ -19,13 +19,6 @@ func main() {
 	// Определяем флаги командной строки для входного и выходного путей
 	srcPath, dstPath := parseFlags()
 
-	// Проверяем, что флаги src и dst были заданы корректно
-	err := validateFlags(srcPath, dstPath)
-	if err != nil {
-		fmt.Println(err)
-		return
-	}
-
 	// Открываем файл, содержащий список URL
 	file, err := openFile(*srcPath)
 	if err != nil {
@@ -85,15 +78,12 @@ func parseFlags() (srcPath *string, dstPath *string) {
 	srcPath = flag.String("src", "", "Путь к файлу со списком URL")
 	dstPath = flag.String("dst", "", "Путь к директории для сохранения загруженных файлов")
 	flag.Parse()
-	return srcPath, dstPath
-}
 
-// validateFlags - функция для проверки значений флагов
-func validateFlags(srcPath, dstPath *string) error {
 	if *srcPath == "" || *dstPath == "" {
-		return fmt.Errorf("Используйте: ./grabber --src=source.txt --dst=destination")
+		flag.Usage()
 	}
-	return nil
+
+	return srcPath, dstPath
 }
 
 // openFile - функция для открытия файла с URL
@@ -113,7 +103,7 @@ func treatmentURL(url string, dstPath string) error {
 	// Выполняем HTTP GET запрос к указанному URL
 	resp, err := http.Get(url)
 	if err != nil {
-		return fmt.Errorf("Ошибка при подключении к URL %s: %v", url, err)
+		return fmt.Errorf("ошибка при подключении к URL %s: %v", url, err)
 	}
 	defer resp.Body.Close()
 
@@ -124,13 +114,13 @@ func treatmentURL(url string, dstPath string) error {
 	filename := filepath.Join(dstPath, sanitizeFilename(url)+".html")
 	outFile, err := os.Create(filename)
 	if err != nil {
-		return fmt.Errorf("Ошибка при создании файла для записи: %v", err)
+		return fmt.Errorf("ошибка при создании файла для записи: %v", err)
 	}
 	defer outFile.Close()
 
 	_, err = outFile.ReadFrom(resp.Body)
 	if err != nil {
-		return fmt.Errorf("Ошибка при записи данных в файл: %v", err)
+		return fmt.Errorf("ошибка при записи данных в файл: %v", err)
 	}
 
 	fmt.Printf("Сохранение %s в %s\n", url, filename)
