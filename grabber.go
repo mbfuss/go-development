@@ -65,7 +65,7 @@ func processURLs(file *os.File, dstPath string) []error {
 	for scanner.Scan() {
 		url := scanner.Text()
 		wg.Add(1)
-		go func(url string) {
+		go func(url string, wg *sync.WaitGroup, dstPath string) {
 			defer wg.Done()
 			err := treatmentURL(url, dstPath)
 			if err != nil {
@@ -73,7 +73,7 @@ func processURLs(file *os.File, dstPath string) []error {
 				errors = append(errors, err)
 				mu.Unlock()
 			}
-		}(url)
+		}(url, &wg, dstPath)
 	}
 
 	wg.Wait()
