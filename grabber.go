@@ -42,40 +42,8 @@ func main() {
 		return
 	}
 
-	// Позволяет основному потоку (или главной горутине) блокироваться до тех пор,
-	// пока все запущенные горутины не завершат свою работу
-	var wg sync.WaitGroup
-	// Используется для обеспечения безопасного доступа к разделяемым данным из нескольких горутин
-	// В данном случае она используется для синхронизации доступа к срезу ошибок errors,
-	// чтобы избежать гонок данных при записи ошибок из различных горутин
-	var mu sync.Mutex
-	// Срез для хранения ошибок
-	errors := []error{}
-
-	// Чтение URL из файла(построчно) и запуск горутин для их обработки
-	scanner := bufio.NewScanner(file)
-	for scanner.Scan() {
-		// Возвращает строку, считанную в текущий момент из файла
-		url := scanner.Text()
-		wg.Add(1)
-		go func(url string) {
-			// Уменьшение счетчика, по окончании выполнения функции
-			defer wg.Done()
-			err := treatmentURL(url, *dstPath)
-			if err != nil {
-				// Строка кода блокирует мьютекс
-				// Если другой поток уже заблокировал мьютекс, текущая горутина будет ждать, пока мьютекс не станет доступным
-				mu.Lock()
-				errors = append(errors, err)
-				mu.Unlock()
-			}
-			// Cоздает копию url для каждой горутины, что гарантирует,
-			// что каждая горутина работает с тем значением url, которое было на момент ее создания
-		}(url)
-	}
-
-	// Ждем завершения всех горутин
-	wg.Wait()
+	// Создаем и запускаем обработку URL
+	errors := processURLs(file, *dstPath)
 
 	// Вывод всех ошибок, если они есть
 	for _, err := range errors {
@@ -85,6 +53,31 @@ func main() {
 	// Вычисляем и выводим продолжительность выполнения программы
 	duration := time.Since(start)
 	fmt.Printf("Программа выполнилась за %v\n", duration)
+}
+
+// processURLs - функция для обработки URL из файла
+func processURLs(file *os.File, dstPath string) []error {
+	var wg sync.WaitGroup
+	var mu sync.Mutex
+	var errors []error
+
+	scanner := bufio.NewScanner(file)
+	for scanner.Scan() {
+		url := scanner.Text()
+		wg.Add(1)
+		go func(url string) {
+			defer wg.Done()
+			err := treatmentURL(url, dstPath)
+			if err != nil {
+				mu.Lock()
+				errors = append(errors, err)
+				mu.Unlock()
+			}
+		}(url)
+	}
+
+	wg.Wait()
+	return errors
 }
 
 // parseFlags - функция для создания флагов командной строки
@@ -122,26 +115,19 @@ func treatmentURL(url string, dstPath string) error {
 	if err != nil {
 		return fmt.Errorf("Ошибка при подключении к URL %s: %v", url, err)
 	}
-	// Гарантируем закрытие тела ответа после завершения функции
 	defer resp.Body.Close()
 
-	// Проверяем статус ответа. Если он не равен 200 OK, возвращаем ошибку
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("Non-OK HTTP статус: %s", resp.Status)
 	}
 
-	// Определяем имя файла для сохранения содержимого, используя безопасное имя файла
 	filename := filepath.Join(dstPath, sanitizeFilename(url)+".html")
-
-	// Создаем файл для записи содержимого
 	outFile, err := os.Create(filename)
 	if err != nil {
 		return fmt.Errorf("Ошибка при создании файла для записи: %v", err)
 	}
-	// Гарантируем закрытие файла после завершения функции
 	defer outFile.Close()
 
-	// Считываем содержимое тела ответа и записываем его в открытый файл
 	_, err = outFile.ReadFrom(resp.Body)
 	if err != nil {
 		return fmt.Errorf("Ошибка при записи данных в файл: %v", err)
