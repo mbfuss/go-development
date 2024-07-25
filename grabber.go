@@ -26,7 +26,7 @@ func main() {
 	}
 
 	// Открытие файла с URL
-	file, err := openFile(*srcPath)
+	file, err := os.Open(*srcPath)
 	if err != nil {
 		fmt.Printf("Ошибка при открытии файла: %s", err)
 		return
@@ -36,7 +36,7 @@ func main() {
 	defer file.Close()
 
 	// Создание директории назначения
-	err = createDirectory(*dstPath)
+	err = os.MkdirAll(*dstPath, os.ModePerm)
 	if err != nil {
 		fmt.Printf("Ошибка создания директория: %s", err)
 		return
@@ -65,22 +65,9 @@ func parseFlags() (srcPath *string, dstPath *string) {
 // validateFlags - проверка значений флагов
 func validateFlags(srcPath, dstPath *string) error {
 	if *srcPath == "" || *dstPath == "" {
-		return fmt.Errorf("Используйте: ./grabber --src=source.txt --dst=destination")
+		flag.Usage()
 	}
 	return nil
-}
-
-// openFile - открытие файла с URL
-func openFile(path string) (*os.File, error) {
-	return os.Open(path)
-}
-
-// createDirectory - создание директории назначения
-func createDirectory(path string) error {
-	// os.MkdirAll: Функция которая рекурсивно создает все указанные в пути директории
-	// *dstPath: Разыменование указателя на строку, которая содержит путь к директории назначения, указанный пользователем в флаге --dst
-	// MkdirAll(path string, perm os.FileMode) error
-	return os.MkdirAll(path, os.ModePerm)
 }
 
 // processURLs - обработка URL из файла
@@ -97,7 +84,7 @@ func processURLs(file *os.File, dstPath string) error {
 
 // treatmentURL - функция обработки URL
 func treatmentURL(url string, dstPath string) error {
-	fmt.Printf("Обработка URL: %s", url)
+	fmt.Println("Обработка URL: %s", url)
 
 	// Выполняет HTTP GET запрос к указанному URL
 	resp, err := http.Get(url)
